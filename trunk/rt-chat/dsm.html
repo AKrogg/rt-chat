@@ -1,0 +1,204 @@
+<html>
+  <head>
+  	<title>Real-time chat</title>
+  	<meta name="description" content="See what your friends are writing in real-time. Powered by Distributed Shared Memory API from Ericsson Labs" > 
+    <script type="text/javascript" src="http://dsm.labs.ericsson.net/management/javascripts/dsm_lib_min.js"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js"></script>
+    
+    <link rel="stylesheet" href="/static/main.css?v=0.1" />
+    <script type="text/javascript">
+	DSM.gwHost = "dsm.labs.ericsson.net";
+	DSM.gwPort = 8080;
+	DSM.apiKey = "<your key>";
+
+	var dsm_users = null;
+	var user_name = null;
+	var dsm_me = null;
+	  
+	function updateText(user, text) {
+        
+		//var old = $("").text();
+		document.getElementById("text-display").innerHTML += "<div class='chat'><span class='chat-user'>" + user + 
+			":</span><span class='chat-msg'> " + text + "</span></div>";
+	}
+	
+	// jQuery init, starting point.
+	$(document).ready(function() {
+		login();
+	});
+	
+	function login() {
+		// Look for a cookie with the name.
+		var name_in_cookie = readCookie("my_name");
+		if (name_in_cookie != null) {
+			on_logged_in(name_in_cookie);
+			$("#text-input-field").focus();
+		} else {
+			$("#main_div").hide();
+			$("#login").show();
+			$("#input-name").focus();
+			$("#input-name").change(function() {
+				createCookie("my_name", $(this).val());
+				window.location.reload();
+			});
+		}
+    
+	}
+	
+	function on_logged_in(my_name) {
+		console.log("On logged in: " + my_name);
+		user_name = my_name;
+		$("#name-display").html("Hallo, " + user_name + " | <a id='log-out' href='#'>Log out</a>");
+	
+		$("#log-out").click(function() {
+			eraseCookie("my_name");
+			window.location.assign("/");
+		});
+		
+		// Create the cookie.
+		createCookie("my_name", user_name);
+		
+		DSM.onReady = function() {
+			console.log("DSM.onReady called");
+			// Get the shared memory.
+			dsm_users = memCtrl.get("hash://typewriter/user");
+			dsm_users.onReady = function() {
+				dsm_users.forEachKey(function(username) {
+					console.log("User: " + username);
+					if (username != user_name) {
+						var address = dsm_users.get(username);
+						if (address) {
+							console.log("User is at: " + address);
+							var user = memCtrl.get(address);
+							// Attach to events.						
+							user.onRemoteUpdate = function(op) {
+								if (op.key == "text") {
+									updateText(user.get("name"), op.value);
+								} else if (op.key == "writing") {
+									var div_id = "#writing-display-" + user.get("name");
+									if (op.value == "") {
+										$(div_id).hide();
+									} else {
+										$("#writing-display:not(:has(" + div_id + "))").append(
+										"<div id='writing-display-" + user.get("name") + "'></div>");
+										$(div_id).show('fast');
+										$(div_id).html(user.get("name") + " is writing: " + op.value);
+									}
+								}
+							};
+						}
+					}
+				});
+				
+				// Watch for new users entering the chat.
+				dsm_users.onRemoteUpdate = function(op) {
+					updateText(op.key, "[Connected to chat]");
+				
+					// Find the DSM for the new user and register for its events.
+					var user = memCtrl.get(op.value);
+					user.onRemoteUpdate = function(op) {
+						if (op.key == "text") {
+							updateText(user.get("name"), op.value);
+						} else if (op.key == "writing") {
+							var div_id = "#writing-display-" + user.get("name");
+							if (op.value == "") {
+								$(div_id).hide();
+							} else {
+								$("#writing-display:not(:has(" + div_id + "))").append(
+									"<div id='writing-display-" + user.get("name") + "'></div>");
+								$(div_id).show('fast');
+								$(div_id).html(user.get("name") + " is writing: " + op.value);
+							}
+						}
+					};
+				};
+			};
+			
+			// Create a user and add it to the global user hash.
+			dsm_me = memCtrl.get("hash://typewriter/user/" + user_name);
+			dsm_me.onReady = function() {
+				dsm_me.set("name", user_name);
+				dsm_me.submit();
+			
+				console.log("My data @ " + dsm_me.remoteAddress);
+				// Store in global hash.
+				dsm_users.set(user_name, dsm_me.remoteAddress);
+				dsm_users.submit();
+				
+				// Attach key handler.
+				$("#text-input-field").keypress(function(event) {
+					var text = $(this).val();
+					if (event.which == '13') {
+						// Enter is pressed.
+						updateText(user_name, text);
+						$(this).val("");
+			
+						// Store/send the new text.
+						dsm_me.set("text", text);
+						dsm_me.set("writing", "");
+						dsm_me.submit();
+						$("#loader").hide();
+					} else {
+						// Store/send the new text.
+						dsm_me.set("writing", $(this).val());
+						dsm_me.submit();
+						$("#loader").show();
+					}
+				});
+			};
+		}
+	}
+	
+	function createCookie(name,value,days) {
+		if (days) {
+			var date = new Date();
+			date.setTime(date.getTime()+(days*24*60*60*1000));
+			var expires = "; expires="+date.toGMTString();
+		}
+		else var expires = "";
+		document.cookie = name+"="+value+expires+"; path=/";
+	}
+
+	function readCookie(name) {
+		var nameEQ = name + "=";
+		var ca = document.cookie.split(';');
+		for(var i=0;i < ca.length;i++) {
+			var c = ca[i];
+			while (c.charAt(0)==' ') c = c.substring(1,c.length);
+			if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+		}
+		return null;
+	}
+
+	function eraseCookie(name) {
+		createCookie(name,"",-1);
+	}
+    </script> 
+  </head> 
+  <body>
+    
+  	<div id="header">
+  		<table>
+  			<tr>
+  				<td><img src="/static/chat_48.png" /></td>
+  				<td>
+  					<div class="head">Real-time Chat</div>
+  					<div class="about">Powered by DSM from <a href="https://labs.ericsson.com/apis/dynamic-shared-memory/" 
+  						target="_blank">Ericsson Labs</a></div>
+  				</td>
+  			</tr>
+  		</table>
+  	</div>
+    <div id="main_div">
+    	<div id="name-display" align="right"></div>
+		<div id="users-display" align="right"></div>
+      	<div id="text-input">
+			<input type="text" id="text-input-field" />
+			<img id="loader" src="/static/ajax-loader.gif" />
+	  	</div>
+      	<div id="text-display"></div>
+	  	<div id="writing-display"></div>
+    </div>
+    <div id="login">Say your name: <input type="text" id="input-name" /></div>
+  </body>
+</html>

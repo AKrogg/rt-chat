@@ -1,0 +1,14 @@
+body {font-family:Arial;color:#333;font-size:12px;padding-bottom:4px;}
+input {width:250px;}
+.head {color:#333;font-family:Arial;font-size:18px;}
+.about {color:#888;font-size:12px;}
+.about a {color:#555;}
+#text-input {margin-bottom:5px;}
+#text-display {width:300px;border-left:1px solid #ccc;font-size:12px;font-family:Monaco,Arial;padding:5px;}
+#writing-display {color:#aaa;font-style:italic;}
+#name-display {font-size:11px;color:#888;}
+#login {display:none;}
+span.chat-msg {}
+span.chat-user {font-weight:bold;}
+.chat {margin-top:3px;}
+#loader {position:relative;top:3px;display:none;}
